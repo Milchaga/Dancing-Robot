@@ -16,20 +16,25 @@ const int MotorADIR = 48;  //Direction Motor A
 const int MotorBOut = 6;   //Enable Motor B
 const int MotorBDIR = 26;  //Direction Motor B
 
-// 314 pulses per revolution
+// 317 pulses per revolution
 volatile int EncAPulse = 0;
 volatile int EncBPulse = 0;
 
-float CNVRT_pulses_to_meters = 0.00072;    // meters per pulse OR (~)1,400 pulses every meter
+float CNVRT_pulses_to_meters = 0.00089;    // meters per pulse OR (~)1,100 pulses every meter
 
 float EncA_Pos = 0;
 float EncB_Pos = 0;
+
 
 // CREATING OBJECTS
 CMotor motorA(MotorAOut, MotorADIR, EncA_A, EncA_B);
 CMotor motorB(MotorBOut, MotorBDIR, EncB_A, EncB_B);
 
-float currentAngle = 0;
+
+float currT, prevT = 0;
+float prevTheta, prevX = 0;
+float K[4] = {-22.3607, -14.5333, -29.7255, -4.0219};
+
 
 void setup() {
   // Declare Interrupts
@@ -38,42 +43,75 @@ void setup() {
 
   // Start Serial communication
   Serial.begin(9600);
-  Serial.setTimeout(100);
   
   // Initialize GYRO
+  Wire.begin();
   byte status = mpu.begin();
   Serial.print(F("MPU6050 status: "));
   Serial.println(status);
-  while(status!=0){ Serial.println(mpu.begin()); } // stop everything if could not connect to MPU6050
-  
+  while (status != 0) { } // stop everything if could not connect to MPU6050
+
   Serial.println(F("Calculating offsets, do not move MPU6050"));
   delay(1000);
-  mpu.calcOffsets(true,true);   // gyro and accelero
-  mpu.setFilterGyroCoef(0.98);  // Use primarily GYRO
+  mpu.calcOffsets(true, true); // gyro and accelero
   Serial.println("Done!\n");
 }
 
 void loop() 
-{ 
-  mpu.update();
-  currentAngle = mpu.getAngleY(); 
-  
-  // Set a Position Target 
-  //target = 150;                        // Constant
-  //target = 100*sin(prevT/1e6);       // Sine wave
-  //target = 150*(sin(prevT/1e6)>0);   // Square wave
-  motorA.target = currentAngle;   // Angle reference
-  
-  motorA.calculate(EncAPulse);
-  motorA.setMotor(motorA.dir, motorA.pwr);
-  //motorB.setMotor(motorA.dir, motorA.pwr);
+{
+  /*
+  digitalWrite(MotorADIR, 1);
+  analogWrite(MotorAOut,120);
 
+  Serial.println(EncAPulse);
+  */
+  // Get dt 
+  currT = micros();
+  float dt = (currT - prevT)/1.0e6;
+  prevT = currT;
+
+  // Read sensor data
+  mpu.update();
+  float theta = mpu.getAngleY()*0.0174;                // Pendulum angle (+offset)
+  float theta_dot = (theta - prevTheta)/dt;           // Pendulum angular velocity
+  float x = EncAPulse*CNVRT_pulses_to_meters;         // Cart displacement
+  float x_dot = (x - prevX)/dt;                       // Cart velocity
+  
+  // Store previous values
+  prevTheta = theta;
+  prevX = x;    
+
+  // Calculate control input
+  float controlInput = -K[2] * theta - K[3] * theta_dot - K[0] * x - K[1] * x_dot;
+
+  int motorSpeed = (fabs(controlInput)*(255-0)/6) + 0;
+  
+  int dir = 1;
+  if(controlInput > 0){
+    dir = 0;
+  }
+  
+  motorA.setMotor(dir, motorSpeed);
+  motorB.setMotor(!dir, motorSpeed);
+
+  Serial.print(theta);
+  Serial.print(" ");
+  Serial.print(controlInput);
+  Serial.print(" ");
+  Serial.print(motorSpeed);
+  Serial.println();
   
   /*
   //receiveAngle();    //Get the angle of tilt
   
   //calculateWheelSpeed();      //Calculates the velocity the wheel must turn according to receiveAngle (TARGET WHEEL SPEED)
-    
+
+
+  // Set a Position Target 
+  //target = 150;                        // Constant
+  //target = 100*sin(prevT/1e6);       // Sine wave
+  //target = 150*(sin(prevT/1e6)>0);   // Square wave
+  motorA.target = GyZ/500;   // Angle reference
   EncA_Pos = EncAPulse * CNVRT_pulses_to_meters;
   EncB_Pos = EncBPulse * CNVRT_pulses_to_meters;
   

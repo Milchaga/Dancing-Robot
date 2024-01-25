@@ -9,12 +9,6 @@ void EncA_Counter()
   { 
     EncAPulse--;
   }
-  
-  /*
-  Serial.println(EncAPulse);
-  EncA_Pos = EncAPulse * CNVRT_pulses_to_meters;
-  Serial.println((String)"Position A is:"+EncAPulse +" Pulses OR " + String(EncA_Pos,3) + "m");
-  */
 }
 
 // Calculate encoderB position when EncB_A changes
@@ -28,11 +22,6 @@ void EncB_Counter()
   { 
     EncBPulse++;
   }
-  /*
-  //Serial.println(EncBPulse);
-  EncB_Pos = EncBPulse * CNVRT_pulses_to_meters;
-  Serial.println((String)"Position B is:"+EncBPulse +" Pulses OR " + String(EncB_Pos,3) + "m");
-  */
 }
 
 /*    !!! CHECK DIRECTION     */

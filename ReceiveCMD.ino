@@ -4,8 +4,8 @@
 
 //Read the YAW angle from the GYRO
 void receiveAngle() {
-  mpu.update();
-  currentAngle = mpu.getAngleY();
+  //mpu.update();
+  //currentAngle = mpu.getAngleY();
   //Serial.println((String)"Angle is: " + currentAngle);
 }
 

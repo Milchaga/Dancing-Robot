@@ -5,11 +5,11 @@
 
 MPU6050 mpu(Wire);
 
-// Check which PINs on the ARDUINO MEGA have Interrupts
-const int EncA_A = 18; //Encoder A - Channel A
-const int EncA_B = 52;  //Encoder B - Channel B
-const int EncB_A = 19; //Encoder A - Channel A
-const int EncB_B = 28;  //Encoder B - Channel B
+// Define motor pin connections
+const int EncA_A = 18;    //Encoder A - Channel A
+const int EncA_B = 52;    //Encoder A - Channel B
+const int EncB_A = 19;    //Encoder B - Channel A
+const int EncB_B = 28;    //Encoder B - Channel B
 
 const int MotorAOut = 5;   //Enable Motor A
 const int MotorADIR = 48;  //Direction Motor A
@@ -22,19 +22,17 @@ volatile int EncBPulse = 0;
 
 float CNVRT_pulses_to_meters = 0.00089;    // meters per pulse OR (~)1,100 pulses every meter
 
-float EncA_Pos = 0;
-float EncB_Pos = 0;
-
-
 // CREATING OBJECTS
 CMotor motorA(MotorAOut, MotorADIR, EncA_A, EncA_B);
 CMotor motorB(MotorBOut, MotorBDIR, EncB_A, EncB_B);
 
-
+// State Space variables
 float currT, prevT = 0;
 float prevTheta, prevX = 0;
-float K[4] = {-22.3607, -14.5333, -29.7255, -4.0219};
-
+float factor = 20;
+float K[4] = {-0.2, -0.2, 1.2, 0.2};    // x, x_dot, theta, theta_dot
+float Nbar = -3.16; 
+float ref = 0;
 
 void setup() {
   // Declare Interrupts
@@ -59,12 +57,6 @@ void setup() {
 
 void loop() 
 {
-  /*
-  digitalWrite(MotorADIR, 1);
-  analogWrite(MotorAOut,120);
-
-  Serial.println(EncAPulse);
-  */
   // Get dt 
   currT = micros();
   float dt = (currT - prevT)/1.0e6;
@@ -72,54 +64,43 @@ void loop()
 
   // Read sensor data
   mpu.update();
-  float theta = mpu.getAngleY()*0.0174;                // Pendulum angle (+offset)
-  float theta_dot = (theta - prevTheta)/dt;           // Pendulum angular velocity
-  float x = EncAPulse*CNVRT_pulses_to_meters;         // Cart displacement
-  float x_dot = (x - prevX)/dt;                       // Cart velocity
+  // Get all 4 states
+  float theta = -(3.2*mpu.getAngleY()*0.0174) + 0.0;        // Pendulum angle [rad] (+offset)
+  float theta_dot = LPF(theta,prevTheta,dt);           // Pendulum angular velocity [rad/s]
+  float x = EncAPulse*CNVRT_pulses_to_meters;          // Body translational displacement [m]
+  float x_dot = LPF(x,prevX,dt);                       // Body translational velocity [m/s]
   
   // Store previous values
   prevTheta = theta;
   prevX = x;    
 
-  // Calculate control input
-  float controlInput = -K[2] * theta - K[3] * theta_dot - K[0] * x - K[1] * x_dot;
+  // Calculate control input u = -Kx + Nbar*ref
+  float controlInput = -K[2] * theta - K[3] * theta_dot - K[0] * x - K[1] * x_dot + Nbar*ref;
+  // Limit the maximum output in voltage
+  controlInput = (controlInput > 4.45) ? 4.45 : controlInput;
+  controlInput = (controlInput < -4.45) ? -4.45 : controlInput;
 
-  int motorSpeed = (fabs(controlInput)*(255-0)/6) + 0;
-  
-  int dir = 1;
-  if(controlInput > 0){
-    dir = 0;
-  }
-  
-  motorA.setMotor(dir, motorSpeed);
-  motorB.setMotor(!dir, motorSpeed);
+  // Assign correct analog value to the required voltage with a deadzone
+  int motorSpeed = (fabs(controlInput)*(255-52)/4.5) + 52;
 
-  Serial.print(theta);
-  Serial.print(" ");
-  Serial.print(controlInput);
-  Serial.print(" ");
-  Serial.print(motorSpeed);
-  Serial.println();
+  // Assign correct direction based on the required u
+  int dir = (controlInput > 0) ? 0 : 1;
   
+  motorA.setMotor(!dir, motorSpeed);
+  motorB.setMotor(dir, motorSpeed);
+
   /*
-  //receiveAngle();    //Get the angle of tilt
-  
-  //calculateWheelSpeed();      //Calculates the velocity the wheel must turn according to receiveAngle (TARGET WHEEL SPEED)
-
-
-  // Set a Position Target 
-  //target = 150;                        // Constant
-  //target = 100*sin(prevT/1e6);       // Sine wave
-  //target = 150*(sin(prevT/1e6)>0);   // Square wave
-  motorA.target = GyZ/500;   // Angle reference
-  EncA_Pos = EncAPulse * CNVRT_pulses_to_meters;
-  EncB_Pos = EncBPulse * CNVRT_pulses_to_meters;
-  
-  motorA.calculate(EncAPulse);
-  motorB.calculate(EncBPulse);
-  
-  motorA.setMotor(motorA.dir, motorA.power);
-  motorB.setMotor(motorB.dir, motorB.power);
-  Serial.println((String)" Motor A speed: " + motorA.power + "; Motor B speed: " + motorB.power);
+  //  Monitor theta; x; and u   // 
+  mpu.update();
+  Serial.print(-mpu.getAngleY());
+  Serial.println();
+  Serial.print(" ");
+  Serial.print(theta_dot*57.29);
+  Serial.print(" ");
+  Serial.print(10*x);
+  Serial.print(" ");
+  Serial.print(10*x_dot);
+  Serial.println();
   */
+  
 }
